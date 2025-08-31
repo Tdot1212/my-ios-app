@@ -6,12 +6,16 @@
 //
 
 import SwiftUI
+import SwiftData
 
 @main
-struct MyAPPApp: App {
+struct OrbitPlannerApp: App {
     var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
+        WindowGroup { ContentView() }
+            .modelContainer(for: [
+                TaskItem.self, LabelTag.self,
+                ReminderItem.self, CalendarEvent.self,
+                NoteItem.self, TrendItem.self
+            ])
     }
 }

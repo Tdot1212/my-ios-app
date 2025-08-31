@@ -6,16 +6,25 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct ContentView: View {
+    @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        TabView {
+            DashboardView().tabItem { Label("Dashboard", systemImage: "house") }
+            TasksView().tabItem { Label("Tasks", systemImage: "list.bullet") }
+            CalendarView().tabItem { Label("Calendar", systemImage: "calendar") }
+            NotesView().tabItem { Label("Notes", systemImage: "note.text") }
+            TrendsView().tabItem { Label("Trends", systemImage: "chart.line.uptrend.xyaxis") }
+            SettingsView().tabItem { Label("Settings", systemImage: "gear") }
         }
-        .padding()
+        .task { await NotificationManager.requestAuth() }
+        .onAppear { RolloverService.autoRollover(context) }
+        .onChange(of: scenePhase) { _, p in if p == .active { RolloverService.autoRollover(context) } }
+        .accentColor(Color(hex: "#4F46E5"))
     }
 }
 
