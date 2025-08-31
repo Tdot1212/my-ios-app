@@ -1,138 +1,135 @@
-// api/trends.js
-import * as cheerio from 'cheerio';
-import { fetch } from 'undici';
+const cheerio = require("cheerio");
 
-const UA =
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile Safari';
-
-const ok = (s) => (s || '').replace(/\s+/g, ' ').trim();
-const withUA = (url) =>
-  fetch(url, { headers: { 'user-agent': UA, 'accept-language': 'en-US,en;q=0.8' } });
-
-function uniqueByTitle(arr) {
+// Small helpers
+const uniqByTitle = (arr) => {
   const seen = new Set();
-  const out = [];
-  for (const x of arr) {
-    const k = (x.title || '').toLowerCase();
-    if (k && !seen.has(k)) {
-      seen.add(k);
-      out.push(x);
-    }
-  }
-  return out;
-}
-
-async function scrapeHighsnobiety(limit) {
-  const r = await withUA('https://www.highsnobiety.com/page/1/');
-  const $ = cheerio.load(await r.text());
-  const items = [];
-  $('article a').each((_, el) => {
-    const href = $(el).attr('href');
-    const t = ok($(el).text());
-    if (href && t && t.length > 6) {
-      items.push({
-        source: 'highsnobiety',
-        title: t,
-        url: new URL(href, 'https://www.highsnobiety.com').href,
-      });
-    }
+  return arr.filter((it) => {
+    const key = (it.title || "").toLowerCase().trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
-  return uniqueByTitle(items).slice(0, limit);
-}
+};
 
-async function scrapeHypebeast(limit) {
-  const r = await withUA('https://hypebeast.com/');
-  const $ = cheerio.load(await r.text());
-  const items = [];
-  $('article a').each((_, el) => {
-    const href = $(el).attr('href');
-    const t = ok($(el).text());
-    if (href && t && t.length > 6) {
-      items.push({
-        source: 'hypebeast',
-        title: t,
-        url: new URL(href, 'https://hypebeast.com').href,
-      });
-    }
-  });
-  return uniqueByTitle(items).slice(0, limit);
-}
-
-async function scrapeTMZ(limit) {
-  const r = await withUA('https://www.tmz.com/');
-  const $ = cheerio.load(await r.text());
-  const items = [];
-  $('article a, .content-list a').each((_, el) => {
-    const href = $(el).attr('href');
-    const t = ok($(el).text());
-    if (href && t && t.length > 6) {
-      items.push({ source: 'tmz', title: t, url: new URL(href, 'https://www.tmz.com').href });
-    }
-  });
-  return uniqueByTitle(items).slice(0, limit);
-}
-
-async function scrapeHotNewHipHop(limit) {
-  const r = await withUA('https://www.hotnewhiphop.com/articles/news');
-  const $ = cheerio.load(await r.text());
-  const items = [];
-  $('article a').each((_, el) => {
-    const href = $(el).attr('href');
-    const t = ok($(el).text());
-    if (href && t && t.length > 6) {
-      items.push({
-        source: 'hotnewhiphop',
-        title: t,
-        url: new URL(href, 'https://www.hotnewhiphop.com').href,
-      });
-    }
-  });
-  return uniqueByTitle(items).slice(0, limit);
-}
-
-// Google Trends via RSS (works server-side)
-async function fetchGoogleTrendsRSS(geo = 'US', limit = 12) {
-  const urls = [
-    `https://trends.google.com/trends/trendingsearches/daily/rss?geo=${geo}`,
-    `https://trends.google.com/trends/trendingsearches/daily/rss?geo=${geo}&ns=1`,
-  ];
-  const items = [];
-  for (const u of urls) {
-    const r = await withUA(u);
-    const xml = await r.text();
-    const $ = cheerio.load(xml, { xmlMode: true });
-    $('item').each((_, el) => {
-      const title = ok($(el).find('title').text());
-      const link = ok($(el).find('link').first().text());
-      if (title) {
-        items.push({
-          source: 'google-trends',
-          title,
-          url: link || `https://www.google.com/search?q=${encodeURIComponent(title)}`,
-        });
-      }
-    });
-  }
-  return uniqueByTitle(items).slice(0, limit);
-}
-
-export default async function handler(req, res) {
+async function getHTML(url) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 10000);
   try {
-    const geo = (req.query.geo || 'US').toString().toUpperCase();
-    const limit = Math.min(parseInt(req.query.limit || '12', 10), 25);
-
-    const [hs, hb, tmz, hnhh, gt] = await Promise.all([
-      scrapeHighsnobiety(limit),
-      scrapeHypebeast(limit),
-      scrapeTMZ(limit),
-      scrapeHotNewHipHop(limit),
-      fetchGoogleTrendsRSS(geo, limit),
-    ]);
-
-    const data = [...gt, ...hs, ...hb, ...tmz, ...hnhh];
-    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=900');
-    res.status(200).json({ items: data, fetchedAt: new Date().toISOString() });
-  } catch (e) {
-    res.status(500).json({ error: e.message || 'scrape failed' });
+    const res = await fetch(url, { signal: ctl.signal, headers: { "user-agent": "Mozilla/5.0 OrbitPlannerBot" }});
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.text();
+  } finally {
+    clearTimeout(t);
   }
 }
+
+/** HIGH SNOBIETY */
+async function fromHighsnobiety() {
+  const html = await getHTML("https://www.highsnobiety.com/page/1/");
+  const $ = cheerio.load(html);
+  const items = [];
+  $("a").each((_, a) => {
+    const title = $(a).text().trim().replace(/\s+/g, " ");
+    const url = $(a).attr("href");
+    if (!url || !/^https?:/.test(url)) return;
+    if (title.length < 20 || title.length > 140) return;
+    if (url.includes("#") || /\/tag\//.test(url)) return;
+    items.push({ source: "Highsnobiety", title, url });
+  });
+  return uniqByTitle(items).slice(0, 10);
+}
+
+/** HYPEBEAST */
+async function fromHypebeast() {
+  const html = await getHTML("https://hypebeast.com/");
+  const $ = cheerio.load(html);
+  const items = [];
+  $("a").each((_, a) => {
+    const title = $(a).attr("title")?.trim() || $(a).text().trim();
+    const url = $(a).attr("href");
+    if (!url || !/^https?:/.test(url)) return;
+    if (!title || title.length < 20 || title.length > 140) return;
+    if (url.includes("#") || /\/tag\//.test(url)) return;
+    items.push({ source: "Hypebeast", title, url });
+  });
+  return uniqByTitle(items).slice(0, 10);
+}
+
+/** TMZ */
+async function fromTMZ() {
+  const html = await getHTML("https://www.tmz.com/");
+  const $ = cheerio.load(html);
+  const items = [];
+  $("a").each((_, a) => {
+    const title = $(a).text().trim();
+    const url = $(a).attr("href");
+    if (!url || !/^https?:/.test(url) || !title) return;
+    if (title.length < 15 || title.length > 140) return;
+    items.push({ source: "TMZ", title, url });
+  });
+  return uniqByTitle(items).slice(0, 10);
+}
+
+/** HotNewHipHop – news list */
+async function fromHNH() {
+  const html = await getHTML("https://www.hotnewhiphop.com/articles/news");
+  const $ = cheerio.load(html);
+  const items = [];
+  $("a").each((_, a) => {
+    const title = $(a).text().trim();
+    const url = $(a).attr("href");
+    if (!url || !/^https?:/.test(url) || !title) return;
+    if (title.length < 15 || title.length > 140) return;
+    items.push({ source: "HotNewHipHop", title, url });
+  });
+  return uniqByTitle(items).slice(0, 10);
+}
+
+/** Google Trends – best-effort scrape of the page you gave */
+async function fromGoogleTrends(geo = "US") {
+  const html = await getHTML(`https://trends.google.com/trending?geo=${encodeURIComponent(geo)}&hours=48`);
+  const $ = cheerio.load(html);
+  const items = [];
+  // grab obvious anchors & headings
+  $("a, h2, h3").each((_, el) => {
+    const title = $(el).text().trim();
+    const url = $(el).attr("href");
+    if (!title || title.length < 3 || title.length > 80) return;
+    if (url && /^https?:/.test(url)) {
+      items.push({ source: "Google Trends", title, url });
+    } else {
+      items.push({ source: "Google Trends", title, url: `https://trends.google.com/trending?geo=${geo}` });
+    }
+  });
+  return uniqByTitle(items).slice(0, 10);
+}
+
+const SOURCES = {
+  hs: fromHighsnobiety,
+  hypebeast: fromHypebeast,
+  tmz: fromTMZ,
+  hnhh: fromHNH,
+  google: fromGoogleTrends,
+};
+
+module.exports = async (req, res) => {
+  try {
+    const { geo = "US", limit = "10", src = "hs,hypebeast,tmz,hnhh" } = req.query;
+    const which = src.split(",").map((s) => s.trim()).filter(Boolean);
+
+    const lists = await Promise.allSettled(
+      which.map((key) => (SOURCES[key] ? SOURCES[key](geo) : Promise.resolve([])))
+    );
+
+    let items = [];
+    for (const r of lists) {
+      if (r.status === "fulfilled") items = items.concat(r.value);
+    }
+    items = uniqByTitle(items).slice(0, Math.max(1, Math.min(50, parseInt(limit, 10) || 10)));
+
+    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=3600");
+    res.status(200).json({ items, fetchedAt: new Date().toISOString() });
+  } catch (err) {
+    res.status(500).json({ error: String(err?.message || err) });
+  }
+};
