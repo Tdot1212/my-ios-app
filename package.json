@@ -1,6 +1,9 @@
 {
   "name": "my-ios-app-api",
   "private": true,
-  "version": "1.0.0",
-  "description": "Serverless API for iOS app – Vercel functions"
+  "version": "1.0.1",
+  "description": "Serverless API for iOS app – Vercel functions",
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.12"
+  }
 }
