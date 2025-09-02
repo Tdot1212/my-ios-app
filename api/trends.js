@@ -1,12 +1,10 @@
 const cheerio = require('cheerio');
 
-const UA =
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile Safari';
+const VERSION = 'rss-1.0.2';
+const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile Safari';
 
 async function fetchText(url) {
-  const res = await fetch(url, {
-    headers: { 'user-agent': UA, 'accept-language': 'en-US,en;q=0.8' },
-  });
+  const res = await fetch(url, { headers: { 'user-agent': UA, 'accept-language': 'en-US,en;q=0.8' } });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return res.text();
 }
@@ -22,8 +20,6 @@ function dedupeByTitle(items) {
   }
   return out;
 }
-
-/** ---------- Sources (RSS where possible) ---------- */
 
 async function fromHighsnobiety(limit) {
   const xml = await fetchText('https://www.highsnobiety.com/feed');
@@ -74,15 +70,12 @@ async function fromHotNewHipHop(limit) {
 }
 
 async function fromGoogleTrends(geo = 'US', limit = 12) {
-  const url = `https://trends.google.com/trends/trendingsearches/daily/rss?geo=${encodeURIComponent(
-    geo
-  )}`;
+  const url = `https://trends.google.com/trends/trendingsearches/daily/rss?geo=${encodeURIComponent(geo)}`;
   const xml = await fetchText(url);
   const $ = cheerio.load(xml, { xmlMode: true });
   const items = [];
   $('item').each((_, el) => {
     const title = $(el).find('title').first().text().trim();
-    // Some RSS items have multiple links; grab the first
     let link = $(el).find('link').first().text().trim();
     if (!link) link = `https://www.google.com/search?q=${encodeURIComponent(title)}`;
     if (title) items.push({ source: 'GoogleTrends', title, url: link });
@@ -90,7 +83,6 @@ async function fromGoogleTrends(geo = 'US', limit = 12) {
   return items.slice(0, limit);
 }
 
-/** ---------- Handler ---------- */
 module.exports = async (req, res) => {
   try {
     const geo = ((req.query.geo || 'US') + '').toUpperCase();
@@ -105,14 +97,12 @@ module.exports = async (req, res) => {
     ]);
 
     let all = [];
-    for (const r of results) {
-      if (r.status === 'fulfilled') all = all.concat(r.value);
-    }
+    for (const r of results) if (r.status === 'fulfilled') all = all.concat(r.value);
     const items = dedupeByTitle(all).slice(0, limit);
 
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=900');
-    res.status(200).json({ items, fetchedAt: new Date().toISOString() });
+    res.status(200).json({ version: VERSION, items, fetchedAt: new Date().toISOString() });
   } catch (e) {
-    res.status(500).json({ error: e.message || 'trends fetch failed' });
+    res.status(500).json({ version: VERSION, error: e.message || 'trends fetch failed' });
   }
 };
