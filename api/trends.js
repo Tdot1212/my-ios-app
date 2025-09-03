@@ -36,7 +36,7 @@ module.exports = async (req,res)=>{
     const rs=await Promise.allSettled([
       fromGoogleTrends(geo,limit),
       fromFeed('https://www.highsnobiety.com/feed','Highsnobiety',limit),
-      fromFeed('https://hypebeast.com/feed','Hypebeast',limit),
+      fromFeed('https://www.hypebeast.com/feed','Hypebeast',limit),
       fromFeed('https://www.tmz.com/rss.xml','TMZ',limit),
       fromFeed('https://www.hotnewhiphop.com/feeds/news.xml','HotNewHipHop',limit),
     ]);
