@@ -1,4 +1,4 @@
-const VERSION = 'prod-no-deps-1';
+const VERSION = 'probe-2-no-deps';
 const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile Safari';
 
 async function fetchText(url) {
@@ -6,15 +6,13 @@ async function fetchText(url) {
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.text();
 }
-function cdata(s){ return s.replace(/^<!\[CDATA\[(.*?)\]\]>$/s,'$1'); }
 function parseRSS(xml, source, limit) {
-  const items = xml.match(/<item\b[\s\S]*?<\/item>/gi) || [];
   const out = [];
+  const items = xml.match(/<item\b[\s\S]*?<\/item>/gi) || [];
   for (const block of items) {
-    const t = cdata((block.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '')).trim();
-    const lraw = cdata((block.match(/<link\b[^>]*>([\s\S]*?)<\/link>/i)?.[1] || '')).trim();
-    const url = lraw || (t ? `https://www.google.com/search?q=${encodeURIComponent(t)}` : '');
-    if (t) out.push({ source, title: t, url });
+    const t = (block.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/^<!\[CDATA\[(.*?)\]\]>$/s,'$1').trim();
+    const l = (block.match(/<link\b[^>]*>([\s\S]*?)<\/link>/i)?.[1] || '').replace(/^<!\[CDATA\[(.*?)\]\]>$/s,'$1').trim();
+    if (t) out.push({ source, title: t, url: l || `https://www.google.com/search?q=${encodeURIComponent(t)}` });
     if (out.length >= limit) break;
   }
   return out;
@@ -26,8 +24,7 @@ function dedupeByTitle(arr){
 }
 async function fromFeed(url, source, limit){ return parseRSS(await fetchText(url), source, limit); }
 async function fromGoogleTrends(geo, limit){
-  const url=`https://trends.google.com/trends/trendingsearches/daily/rss?geo=${encodeURIComponent(geo)}`;
-  return parseRSS(await fetchText(url),'GoogleTrends',limit);
+  return parseRSS(await fetchText(`https://trends.google.com/trends/trendingsearches/daily/rss?geo=${encodeURIComponent(geo)}`),'GoogleTrends',limit);
 }
 module.exports = async (req,res)=>{
   try{
@@ -36,7 +33,7 @@ module.exports = async (req,res)=>{
     const rs=await Promise.allSettled([
       fromGoogleTrends(geo,limit),
       fromFeed('https://www.highsnobiety.com/feed','Highsnobiety',limit),
-      fromFeed('https://www.hypebeast.com/feed','Hypebeast',limit),
+      fromFeed('https://hypebeast.com/feed','Hypebeast',limit),
       fromFeed('https://www.tmz.com/rss.xml','TMZ',limit),
       fromFeed('https://www.hotnewhiphop.com/feeds/news.xml','HotNewHipHop',limit),
     ]);
@@ -45,6 +42,6 @@ module.exports = async (req,res)=>{
     res.setHeader('Cache-Control','s-maxage=300, stale-while-revalidate=900');
     res.status(200).json({ version: VERSION, items, fetchedAt: new Date().toISOString() });
   }catch(e){
-    res.status(500).json({ version: 'prod-no-deps-1', error: e.message });
+    res.status(500).json({ version: 'probe-2-no-deps', error: e.message });
   }
 };
