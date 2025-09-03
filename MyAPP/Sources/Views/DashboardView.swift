@@ -4,7 +4,10 @@ import SwiftData
 struct DashboardView: View {
     @Environment(\.modelContext) private var context
     @State private var showingTaskEditor = false
-    @State private var isRecording = false
+    @State private var showingVoiceConfirmation = false
+    
+    @StateObject private var voiceService = VoiceCommandService.shared
+    @StateObject private var creationService = CreationService.shared
     
     @Query private var tasks: [TaskItem]
     @Query private var reminders: [ReminderItem]
@@ -108,16 +111,15 @@ struct DashboardView: View {
                     HStack {
                         Spacer()
                         Button(action: {
-                            // TODO: Implement voice recording
-                            print("Mic button tapped")
+                            // Voice recording is handled by gesture
                         }) {
-                            Image(systemName: isRecording ? "stop.circle.fill" : "mic.fill")
+                            Image(systemName: voiceService.isRecording ? "stop.circle.fill" : "mic.fill")
                                 .font(.system(size: 32))
                                 .foregroundColor(.white)
                                 .frame(width: 72, height: 72)
                                 .background(
                                     Circle()
-                                        .fill(isRecording ? Color.red : Color(hex: "#4F46E5"))
+                                        .fill(voiceService.isRecording ? Color.red : Color(hex: "#4F46E5"))
                                 )
                                 .shadow(radius: 8)
                         }
@@ -125,14 +127,17 @@ struct DashboardView: View {
                         .simultaneousGesture(
                             LongPressGesture(minimumDuration: 0.1, maximumDistance: .infinity)
                                 .onEnded { _ in
-                                    // Release gesture
-                                    isRecording = false
-                                    // TODO: Stop recording and process
+                                    // Release gesture - stop recording and process
+                                    Task {
+                                        await handleVoiceCommandEnd()
+                                    }
                                 }
                                 .onChanged { pressing in
-                                    isRecording = pressing
                                     if pressing {
-                                        // TODO: Start recording
+                                        // Start recording
+                                        Task {
+                                            await handleVoiceCommandStart()
+                                        }
                                     }
                                 }
                         )
@@ -153,6 +158,32 @@ struct DashboardView: View {
             .sheet(isPresented: $showingTaskEditor) {
                 TaskEditorView()
             }
+            .sheet(isPresented: $showingVoiceConfirmation) {
+                VoiceCommandConfirmationView(creationService: creationService)
+            }
+            .onReceive(creationService.$showingConfirmation) { showing in
+                showingVoiceConfirmation = showing
+            }
+        }
+    }
+    
+    private func handleVoiceCommandStart() async {
+        do {
+            try await voiceService.startRecording()
+        } catch {
+            print("[DashboardView] Failed to start recording: \(error)")
+        }
+    }
+    
+    private func handleVoiceCommandEnd() async {
+        do {
+            let transcribedText = try await voiceService.stopRecording()
+            if !transcribedText.isEmpty {
+                let intentResult = IntentParser.parse(transcribedText)
+                creationService.apply(result: intentResult)
+            }
+        } catch {
+            print("[DashboardView] Failed to stop recording: \(error)")
         }
     }
 }

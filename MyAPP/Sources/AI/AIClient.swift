@@ -1,9 +1,14 @@
 // File: AIClient.swift
 import Foundation
 
+// MARK: - Shared Types
+
 struct ChatMessage: Codable { let role: String; let content: String }
+
 struct ProxyRequest: Codable { let provider: String; let model: String; let messages: [ChatMessage]; let temperature: Double? }
 struct ProxyResponse: Codable { let ok: Bool; let text: String }
+
+// MARK: - Client
 
 final class AIClient {
     static let shared = AIClient()
@@ -45,7 +50,8 @@ final class AIClient {
         }
     }
 
-    // Proxy path (company server keys)
+    // MARK: - Proxy path (company server keys)
+
     private func viaProxy(messages: [ChatMessage]) async throws -> String {
         var req = URLRequest(url: proxyURL)
         req.httpMethod = "POST"
@@ -58,45 +64,44 @@ final class AIClient {
         return decoded.text
     }
 
-    // Direct provider calls (user's personal key)
+    // MARK: - Direct provider calls (user's personal key)
+
     private func direct(messages: [ChatMessage], key: String) async throws -> String {
         switch provider {
         case .deepseek:
             return try await call(
                 url: URL(string: "https://api.deepseek.com/v1/chat/completions")!,
                 headers: ["Authorization": "Bearer \(key)", "Content-Type": "application/json"],
-                body: ["model": model, "messages": messages, "temperature": 0.2]
+                body: DeepSeekChatBody(model: model, messages: messages, temperature: 0.2)
             ) { data in
-                try JSONDecoder().decode(OpenAIStyle.self, from: data).choices.first?.message.content ?? ""
+                try JSONDecoder().decode(OpenAIChatResp.self, from: data).choices.first?.message.content ?? ""
             }
 
         case .openai:
             return try await call(
                 url: URL(string: "https://api.openai.com/v1/chat/completions")!,
                 headers: ["Authorization": "Bearer \(key)", "Content-Type": "application/json"],
-                body: ["model": model, "messages": messages, "temperature": 0.2]
+                body: OpenAIChatBody(model: model, messages: messages, temperature: 0.2)
             ) { data in
-                try JSONDecoder().decode(OpenAIStyle.self, from: data).choices.first?.message.content ?? ""
+                try JSONDecoder().decode(OpenAIChatResp.self, from: data).choices.first?.message.content ?? ""
             }
 
         case .anthropic:
             return try await call(
                 url: URL(string: "https://api.anthropic.com/v1/messages")!,
                 headers: ["x-api-key": key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"],
-                body: ["model": model, "max_tokens": 1024, "messages": messages]
+                body: AnthropicBody(model: model, max_tokens: 1024, messages: messages)
             ) { data in
                 try JSONDecoder().decode(AnthropicResp.self, from: data).content.first?.text ?? ""
             }
 
         case .gemini:
             let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(key)")!
-            // Convert messages -> contents
-            let contents: [[String: Any]] = messages.map { ["role": $0.role == "assistant" ? "model" : "user",
-                                                            "parts": [["text": $0.content]]] }
             return try await call(
                 url: url,
                 headers: ["Content-Type": "application/json"],
-                body: ["contents": contents, "generationConfig": ["temperature": 0.2]]
+                body: GeminiBody(contents: messages.asGeminiContents(),
+                                 generationConfig: .init(temperature: 0.2))
             ) { data in
                 try JSONDecoder().decode(GeminiResp.self, from: data)
                     .candidates.first?.content.parts.compactMap { $0.text }.joined() ?? ""
@@ -104,7 +109,8 @@ final class AIClient {
         }
     }
 
-    // Generic caller
+    // MARK: - Generic caller
+
     private func call<T: Encodable>(url: URL,
                                     headers: [String:String],
                                     body: T,
@@ -119,8 +125,51 @@ final class AIClient {
     }
 }
 
-// Minimal response types
-struct OpenAIStyle: Decodable {
+// MARK: - Typed request bodies
+
+private struct OpenAIChatBody: Encodable {
+    let model: String
+    let messages: [ChatMessage]
+    let temperature: Double?
+}
+
+private struct DeepSeekChatBody: Encodable {
+    let model: String
+    let messages: [ChatMessage]
+    let temperature: Double?
+}
+
+private struct AnthropicBody: Encodable {
+    let model: String
+    let max_tokens: Int
+    let messages: [ChatMessage]
+}
+
+private struct GeminiBody: Encodable {
+    struct GenerationConfig: Encodable { let temperature: Double? }
+    let contents: [GeminiContent]
+    let generationConfig: GenerationConfig
+}
+
+private struct GeminiContent: Encodable {
+    let role: String
+    let parts: [GeminiPart]
+}
+
+private struct GeminiPart: Encodable { let text: String }
+
+private extension Array where Element == ChatMessage {
+    func asGeminiContents() -> [GeminiContent] {
+        map { msg in
+            GeminiContent(role: msg.role == "assistant" ? "model" : "user",
+                          parts: [GeminiPart(text: msg.content)])
+        }
+    }
+}
+
+// MARK: - Minimal response decoders
+
+struct OpenAIChatResp: Decodable {
     struct Choice: Decodable {
         struct Msg: Decodable { let role: String; let content: String }
         let index: Int
@@ -128,10 +177,12 @@ struct OpenAIStyle: Decodable {
     }
     let choices: [Choice]
 }
+
 struct AnthropicResp: Decodable {
     struct Piece: Decodable { let text: String? }
     let content: [Piece]
 }
+
 struct GeminiResp: Decodable {
     struct Content: Decodable { struct Part: Decodable { let text: String? }; let parts: [Part] }
     struct Candidate: Decodable { let content: Content }
