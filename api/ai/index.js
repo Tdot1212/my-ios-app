@@ -47,7 +47,7 @@ export default async function handler(req, res) {
 
     } else { // deepseek (default)
       const key = process.env.DEEPSEEK_API_KEY; if (!key) throw new Error('Missing DEEPSEEK_API_KEY');
-      url = 'https://api.anthropic.com/v1/messages';
+      url = 'https://api.deepseek.com/v1/chat/completions';
       headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` };
       body = { model: model || 'deepseek-chat', messages: chat, temperature, stream: false };
     }

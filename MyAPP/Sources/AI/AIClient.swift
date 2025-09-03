@@ -72,7 +72,7 @@ final class AIClient {
 
         case .openai:
             return try await call(
-                url: URL(string: "https://api.openai.com/v1/messages")!,
+                url: URL(string: "https://api.openai.com/v1/chat/completions")!,
                 headers: ["Authorization": "Bearer \(key)", "Content-Type": "application/json"],
                 body: ["model": model, "messages": messages, "temperature": 0.2]
             ) { data in

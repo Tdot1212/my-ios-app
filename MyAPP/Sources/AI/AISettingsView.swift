@@ -19,7 +19,6 @@ struct AISettingsView: View {
                 }
                 .onChange(of: provider) { new in
                     AIClient.shared.provider = new
-                    // Reset model to default when provider changes
                     model = new.defaultModel
                     AIClient.shared.model = model
                     personalKey = SecretsStore.load(account: AIClient.shared.providerAccount()) ?? ""
@@ -61,7 +60,6 @@ struct AISettingsView: View {
         case .anthropic: return "Claude Messages API (anthropic-version 2023-06-01)."
         case .gemini:    return "Gemini generateContent (Google). Key tied to your project."
         case .deepseek:  return "DeepSeek Chat Completions compatible."
-        }
         }
     }
 
