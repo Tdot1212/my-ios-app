@@ -15,7 +15,7 @@ struct OrbitPlannerApp: App {
             .modelContainer(for: [
                 TaskItem.self, LabelTag.self,
                 ReminderItem.self, CalendarEvent.self,
-                NoteItem.self, TrendItem.self
+                NoteItem.self
             ])
     }
 }

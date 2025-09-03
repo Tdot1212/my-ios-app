@@ -19,7 +19,7 @@ struct ContentView: View {
             CalendarView().tabItem { Label("Calendar", systemImage: "calendar") }
             NotesView().tabItem { Label("Notes", systemImage: "note.text") }
             TrendsView().tabItem { Label("Trends", systemImage: "chart.line.uptrend.xyaxis") }
-            SettingsView().tabItem { Label("Settings", systemImage: "gear") }
+            NavigationStack { AISettingsView() }.tabItem { Label("Settings", systemImage: "gear") }
         }
         .task { await NotificationManager.requestAuth() }
         .onAppear { RolloverService.autoRollover(context) }

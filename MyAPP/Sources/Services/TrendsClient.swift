@@ -1,25 +1,26 @@
 import Foundation
 
-struct TrendDTO: Codable, Identifiable {
-    var id: String { "\(source)|\(title)" }
-    let source: String
-    let title: String
-    let url: String?
-}
+enum TrendsError: Error { case badURL, badResponse }
 
-enum TrendsClient {
-    // Set this once (Settings screen or a Constants.swift).
-    static var base = UserDefaults.standard.string(forKey: "SCRAPER_BASE") ?? "" // e.g. "https://orbit-trends-proxy.vercel.app"
+final class TrendsClient {
+    static let shared = TrendsClient()
 
-    static func setBase(_ url: String) { UserDefaults.standard.set(url, forKey: "SCRAPER_BASE"); base = url }
+    func fetch(geo: String = "US", limit: Int = 12) async throws -> [TrendItem] {
+        var comps = URLComponents(
+            url: AppConfig.trendsBaseURL.appendingPathComponent("/api/trends"),
+            resolvingAgainstBaseURL: false
+        )
+        comps?.queryItems = [
+            URLQueryItem(name: "geo", value: geo),
+            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "v", value: String(Int(Date().timeIntervalSince1970))) // cache-buster during dev
+        ]
+        guard let url = comps?.url else { throw TrendsError.badURL }
 
-    static func fetchAll(geo: String = "US", limit: Int = 12) async throws -> [TrendDTO] {
-        guard let url = URL(string: "\(base)/api/trends?geo=\(geo)&limit=\(limit)") else {
-            throw URLError(.badURL)
-        }
         let (data, resp) = try await URLSession.shared.data(from: url)
-        guard (resp as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
-        struct Envelope: Codable { let items: [TrendDTO] }
-        return try JSONDecoder().decode(Envelope.self, from: data).items
+        guard (resp as? HTTPURLResponse)?.statusCode == 200 else { throw TrendsError.badResponse }
+
+        let decoded = try JSONDecoder().decode(TrendsResponse.self, from: data)
+        return decoded.items
     }
 }
